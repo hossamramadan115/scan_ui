@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_barcode_scanner/flutter_barcode_scanner.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:scan_app/app/cubit/profile_cubit.dart';
 
 void main() {
   runApp(MyApp());
@@ -14,7 +17,10 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
       ),
       debugShowCheckedModeBanner: false,
-      home: MyHomePage(),
+      home: BlocProvider(
+        create: (context) => ProfileCubit(),
+        child: MyHomePage(),
+      ),
     );
   }
 }
@@ -25,20 +31,50 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  String coinsValue = '';
-  String userId = '';
+  final TextEditingController userIdController = TextEditingController();
+  final TextEditingController coinsValueController = TextEditingController();
+  final TextEditingController amountController = TextEditingController();
+
+  @override
+  void dispose() {
+    userIdController.dispose();
+    coinsValueController.dispose();
+    amountController.dispose();
+    super.dispose();
+  }
 
   Future<void> _scanBarcode() async {
     try {
-      String barcode = await FlutterBarcodeScanner.scanBarcode(
-        '#004297',
+      String barcodeResult = await FlutterBarcodeScanner.scanBarcode(
+        '#ff6666',
         'Cancel',
         true,
-        ScanMode.BARCODE,
+        ScanMode.QR,
       );
+      if (barcodeResult != '-1' && barcodeResult.isNotEmpty) {
+        var decodedData = jsonDecode(barcodeResult);
+        setState(() {
+          userIdController.text = decodedData['id'].toString();
+          coinsValueController.text = decodedData['coins'].toString();
+        });
+      }
     } catch (e) {
-      print('Error scanning barcode: $e');
+      print('Error decoding barcode: $e');
+      setState(() {
+        userIdController.text = 'Failed to get the user ID';
+        coinsValueController.text = 'Failed to get the coins value';
+      });
     }
+  }
+
+  void exchangeCoins() {
+    context.read<ProfileCubit>().getExchangeCoins(amount: amountController.text);
+  }
+
+  void clearInputs() {
+    userIdController.clear();
+    coinsValueController.clear();
+    amountController.clear();
   }
 
   @override
@@ -47,90 +83,80 @@ class _MyHomePageState extends State<MyHomePage> {
       appBar: AppBar(
         title: Text('Scan Barcode'),
       ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(10.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Scan User qrcode to exchange coins',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 18.0,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              SizedBox(height: 20.0),
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 20.0),
-                margin: EdgeInsets.symmetric(vertical: 10.0),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Color(0xffF74F22)),
-                  borderRadius: BorderRadius.circular(10.0),
-                ),
-                child: TextFormField(
-                  decoration: InputDecoration(
-                    border: InputBorder.none,
-                    hintText: 'coins value',
-                    contentPadding: EdgeInsets.symmetric(
-                        vertical: 10.0), 
+      body: BlocListener<ProfileCubit, ProfileState>(
+        listener: (context, state) {
+          if (state is SuccessExchangeCoinsState) {
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: Text("Success"),
+                content: Text("Coins exchanged successfully."),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      clearInputs();
+                    },
+                    child: Text('OK'),
                   ),
-                  onChanged: (value) {
-                    setState(() {
-                      coinsValue = value;
-                    });
-                  },
-                ),
+                ],
               ),
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 20.0),
-                margin: EdgeInsets.symmetric(vertical: 10.0),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Color(0xffF74F22)),
-                  borderRadius: BorderRadius.circular(10.0),
-                ),
-                child: TextFormField(
+            );
+          }
+        },
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(10.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TextFormField(
+                  controller: userIdController,
+                  readOnly: true,
                   decoration: InputDecoration(
-                    border: InputBorder.none,
-                    hintText: 'user id',
-                    contentPadding: EdgeInsets.symmetric(
-                        vertical: 10.0), 
+                    labelText: 'User ID',
+                    border: OutlineInputBorder(),
                   ),
-                  onChanged: (value) {
-                    setState(() {
-                      coinsValue = value;
-                    });
-                  },
                 ),
-              ),
-              SizedBox(height: 15.0),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 55.0),
-                child: ElevatedButton(
+                SizedBox(height: 10),
+                TextFormField(
+                  controller: coinsValueController,
+                  readOnly: true,
+                  decoration: InputDecoration(
+                    labelText: 'Coins Value',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                SizedBox(height: 20),
+                ElevatedButton(
                   onPressed: _scanBarcode,
+                  child: Text('Scan QR Code'),
                   style: ElevatedButton.styleFrom(
-                    primary: Colors.deepOrange,
-                  ),
-                  child: Text(
-                    'Scan Qr Code',
-                    style: TextStyle(color: Colors.white),
+                    // primary: Colors.blue,
+                    // onPrimary: Colors.white,
                   ),
                 ),
-              ),
-              SizedBox(height: 10.0),
-              ElevatedButton(
-                onPressed: () {},
-                style: ElevatedButton.styleFrom(
-                  primary: Colors.grey,
+                SizedBox(height: 10),
+                TextFormField(
+                  controller: amountController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Amount to Exchange',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-                child: Text(
-                  'Exchange Coins',
-                  style: TextStyle(color: Colors.white), 
+                SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: exchangeCoins,
+                  child: Text('Exchange Coins'),
+                  style: ElevatedButton.styleFrom(
+                    // primary: Colors.green,
+                    // onPrimary: Colors.white,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
